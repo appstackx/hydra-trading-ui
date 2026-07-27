@@ -1,5 +1,8 @@
 # Hydra Terminal
 
+[![CI](https://github.com/appstackx/hydra-trading-ui/actions/workflows/ci.yml/badge.svg)](https://github.com/appstackx/hydra-trading-ui/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 A white-label FX trading and order-management interface — live spot tiles, a blotter, real-time
 analytics and an OMS — built as a **UI-only product**: it renders and executes against whatever
 back end you plug in, and ships with a simulated one so it runs standalone.
