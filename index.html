@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="A white-label FX trading and order management interface — live spot tiles, blotter, analytics and OMS."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Hydra Terminal</title>
+    <style>
+      /* Painted before the bundle parses, so the first frame is not white. */
+      html {
+        background: #070910;
+      }
+      html[data-theme='light'] {
+        background: #f2f4f8;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      This trading interface requires JavaScript. Enable it, or contact your desk support team.
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

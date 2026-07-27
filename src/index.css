@@ -1,0 +1,205 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens.
+ *
+ * Every colour, radius and font in the product resolves to one of these custom
+ * properties — no component hard-codes a hex value. That is what makes the UI
+ * re-skinnable for a licensee by overriding a handful of variables rather than
+ * touching component source.
+ *
+ * Values below are the dark theme, which is the default on a trading floor.
+ */
+@theme {
+  --color-canvas: #070910;
+  --color-panel: #0e121b;
+  --color-panel-raised: #151a25;
+  --color-panel-hover: #1c2331;
+  --color-line: #212a39;
+  --color-line-strong: #303c50;
+
+  --color-ink: #e8edf7;
+  --color-ink-muted: #8b95a9;
+  --color-ink-subtle: #5c6679;
+
+  --color-brand: #4f8dff;
+  --color-brand-soft: #1b2c4d;
+
+  --color-buy: #10cf9b;
+  --color-buy-soft: #0b3b30;
+  --color-sell: #ff5c7a;
+  --color-sell-soft: #451f2b;
+  --color-warn: #ffb020;
+  --color-warn-soft: #40300d;
+
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --radius-panel: 0.625rem;
+
+  --ease-snap: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Light theme. Higher specificity than :root so it wins the cascade. */
+html[data-theme='light'] {
+  --color-canvas: #f2f4f8;
+  --color-panel: #ffffff;
+  --color-panel-raised: #f7f9fc;
+  --color-panel-hover: #eef2f8;
+  --color-line: #dde3ed;
+  --color-line-strong: #c3cddd;
+
+  --color-ink: #10151f;
+  --color-ink-muted: #5a6579;
+  --color-ink-subtle: #8a94a6;
+
+  --color-brand: #2563eb;
+  --color-brand-soft: #dbe7ff;
+
+  --color-buy: #058a68;
+  --color-buy-soft: #d3f5eb;
+  --color-sell: #d92548;
+  --color-sell-soft: #ffdfe5;
+  --color-warn: #a86710;
+  --color-warn-soft: #fdf0d5;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  /*
+   * Prices must never reflow as digits change width, so every numeric surface
+   * opts into tabular figures.
+   */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-subtle);
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  /*
+   * Price tick flashes. Kept in CSS so animating does not cost a React render.
+   *
+   * The duration is deliberately shorter than the fastest instrument's tick
+   * interval (320ms): a flash that outlives its own tick never fades, and the
+   * tile ends up permanently washed in colour instead of pulsing.
+   */
+  @keyframes flash-up {
+    0% {
+      background-color: color-mix(in srgb, var(--color-buy) 22%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  @keyframes flash-down {
+    0% {
+      background-color: color-mix(in srgb, var(--color-sell) 22%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  .flash-up {
+    animation: flash-up 260ms var(--ease-snap);
+  }
+
+  .flash-down {
+    animation: flash-down 260ms var(--ease-snap);
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-rise {
+    animation: rise 220ms var(--ease-snap);
+  }
+
+  @keyframes pulse-ring {
+    0% {
+      opacity: 0.85;
+      transform: scale(0.9);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.9);
+    }
+  }
+
+  .animate-pulse-ring {
+    animation: pulse-ring 1.6s ease-out infinite;
+  }
+}
+
+/*
+ * Respect the OS setting. Flashing prices and sliding panels are decoration; the
+ * data is what matters, and vestibular triggers are a real accessibility issue.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
