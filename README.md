@@ -173,10 +173,32 @@ The feature set is modelled on [Reactive Trader Cloud](https://github.com/Adapti
 an independent implementation written from that feature brief — no code was copied — with an
 adapter architecture and an OMS panel added to make the UI-only licensing model concrete.
 
-**This is a demonstration build, not a production trading system.** Prices are simulated, execution
-is simulated, and there is no authentication, entitlement, audit log, kill switch, market-data
-licensing or regulatory reporting. Those are the licensee's responsibility and are discussed in
-[`docs/business-model.md`](docs/business-model.md).
+**This is a reference implementation, not a production trading system.** Prices and execution are
+simulated; there is no authentication, entitlement model, audit trail, venue connectivity or
+persistence. What it demonstrates is the architecture, the domain correctness and the engineering
+standard — see [`docs/production-readiness.md`](docs/production-readiness.md) for an honest map of
+the distance between this and a deployed system, which is also how we scope client work.
+
+## Who built this
+
+Built by **Khuram Masood** at [Appstackx](https://appstackx.co.uk), a UK software consultancy.
+
+Before Appstackx I spent <!-- TODO: fill in --> **[N] years** in financial services technology, at
+**S&P Global**, **JP Morgan** and **PIMCO** — <!-- TODO: one line per role, e.g. "building
+low-latency market data pipelines", "on the FX e-trading platform", "in portfolio analytics
+engineering". Keep it factual: what you worked on, not claims about outcomes. -->
+
+That background is the reason this repository gets the details right: pip conventions that differ
+per pair, T+2 value dates that skip weekends, weighted-average cost basis, and P&L converted to a
+single reporting currency before it is summed. They are the things a team building a dealing screen
+for the first time gets wrong, and they are not in any tutorial.
+
+**We build trading front ends.** If you are standing up a dealing screen, an order-management UI or
+a client-facing trading portal, this repository is roughly where your project starts rather than
+where it ends. [khuram@appstackx.co.uk](mailto:khuram@appstackx.co.uk)
+
+<sub>S&P Global, JP Morgan and PIMCO are named as prior employment history only. Appstackx is not
+affiliated with, endorsed by, or partnered with any of them.</sub>
 
 ## Licence
 
