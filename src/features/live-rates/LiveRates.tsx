@@ -1,9 +1,11 @@
-import { memo, type ReactNode } from 'react'
+import { memo, useMemo, type ReactNode } from 'react'
 import type { CurrencyPair } from '@/domain'
 import { formatRate, spreadInPips, toPips } from '@/domain'
 import { Panel } from '@/components/Panel'
 import { Sparkline } from '@/components/Sparkline'
+import { visibleInstruments } from '@/domain'
 import { useCurrencyPairs, usePrice, usePriceHistory } from '@/hooks/useMarketData'
+import { useUser } from '@/app/AuthContext'
 import { cn } from '@/lib/cn'
 
 /**
@@ -14,7 +16,11 @@ import { cn } from '@/lib/cn'
  * a shared subscription would re-render all ten rows about thirty times a second.
  */
 export function LiveRates(): ReactNode {
-  const pairs = useCurrencyPairs()
+  const allPairs = useCurrencyPairs()
+  const user = useUser()
+  // Entitlements filter the market watch too — an instrument you may not trade
+  // is not one you should be watching prices for.
+  const pairs = useMemo(() => visibleInstruments(user, allPairs), [user, allPairs])
 
   return (
     <Panel title="Live rates" meta={`${pairs.length} pairs`} flush>

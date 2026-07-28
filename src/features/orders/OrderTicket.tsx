@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import type { Direction, OrderDraft, OrderType, TimeInForce } from '@/domain'
-import { formatNotional, parseNotional, validateOrderDraft } from '@/domain'
+import { canDeal, formatNotional, parseNotional, validateOrderDraft, visibleInstruments } from '@/domain'
 import { Button } from '@/components/Button'
 import { useServices } from '@/app/ServicesContext'
 import { useToasts } from '@/app/ToastContext'
 import { useAllPrices, useCurrencyPairs } from '@/hooks/useMarketData'
+import { useUser } from '@/app/AuthContext'
 import { cn } from '@/lib/cn'
 
 const ORDER_TYPES: readonly OrderType[] = ['Market', 'Limit']
@@ -19,14 +20,27 @@ const TIME_IN_FORCE: readonly TimeInForce[] = ['GTC', 'IOC', 'FOK']
 export function OrderTicket(): ReactNode {
   const { orders } = useServices()
   const { push } = useToasts()
-  const pairs = useCurrencyPairs()
+  const allPairs = useCurrencyPairs()
   const prices = useAllPrices()
+  const user = useUser()
 
-  const [symbol, setSymbol] = useState(() => pairs[0]?.symbol ?? '')
+  const pairs = useMemo(() => visibleInstruments(user, allPairs), [user, allPairs])
+
+  // Derived rather than snapshotted into state: the entitled list is empty on
+  // the first render, while the user context is still resolving, and a
+  // `useState` initialiser would freeze that empty value forever. Falling back
+  // to the first entitled pair also self-heals if entitlements change.
+  const [chosenSymbol, setChosenSymbol] = useState('')
+  const symbol = pairs.some((pair) => pair.symbol === chosenSymbol)
+    ? chosenSymbol
+    : (pairs[0]?.symbol ?? '')
+  const setSymbol = setChosenSymbol
   const [direction, setDirection] = useState<Direction>('Buy')
   const [orderType, setOrderType] = useState<OrderType>('Limit')
   const [timeInForce, setTimeInForce] = useState<TimeInForce>('GTC')
-  const [quantityText, setQuantityText] = useState('1m')
+  // `null` until the user types, so the box follows the selected instrument's
+  // own default. Hard-coding "1m" is fine for FX and absurd for Bitcoin.
+  const [typedQuantity, setTypedQuantity] = useState<string | null>(null)
   const [limitText, setLimitText] = useState('')
   const [submitted, setSubmitted] = useState(false)
 
@@ -35,6 +49,8 @@ export function OrderTicket(): ReactNode {
     [pairs, symbol]
   )
   const price = prices[symbol]
+
+  const quantityText = typedQuantity ?? (pair ? formatNotional(pair.defaultNotional) : '')
 
   const draft = useMemo<OrderDraft>(() => {
     const limitPrice = Number.parseFloat(limitText)
@@ -51,6 +67,24 @@ export function OrderTicket(): ReactNode {
   const errors = useMemo(() => validateOrderDraft(draft), [draft])
   const hasErrors = Object.keys(errors).length > 0
 
+  // The same entitlement check the tiles use, so the ticket and the tile can
+  // never disagree about what this user is allowed to do.
+  const permission = useMemo(
+    () => canDeal(user, symbol, draft.quantity),
+    [user, symbol, draft.quantity]
+  )
+
+  /*
+   * Permission feedback is live; validation feedback waits for submit.
+   *
+   * An empty quantity box fails `canDeal` too, but "enter a quantity" is a
+   * validation message and nagging about it while the user is still typing is
+   * exactly what `submitted` exists to prevent. So the entitlement notice only
+   * appears once there is a real size to judge.
+   */
+  const quantityEntered = Number.isFinite(draft.quantity) && draft.quantity > 0
+  const permissionBlocked = quantityEntered && !permission.allowed
+
   /** Prefills the limit with the touch price on the side being traded. */
   const applyTouchPrice = useCallback(() => {
     if (!price || !pair) return
@@ -63,6 +97,10 @@ export function OrderTicket(): ReactNode {
       event.preventDefault()
       setSubmitted(true)
       if (hasErrors) return
+      if (!permission.allowed) {
+        push({ tone: 'error', title: 'Not permitted', detail: permission.reason })
+        return
+      }
 
       void orders
         .submit(draft)
@@ -84,7 +122,7 @@ export function OrderTicket(): ReactNode {
           })
         })
     },
-    [draft, hasErrors, orders, push]
+    [draft, hasErrors, orders, permission, push]
   )
 
   return (
@@ -102,6 +140,8 @@ export function OrderTicket(): ReactNode {
             value={symbol}
             onChange={(event) => {
               setSymbol(event.target.value)
+              setTypedQuantity(null)
+              setLimitText('')
             }}
             className="h-7 w-full rounded border border-line bg-panel-raised px-1.5 text-xs text-ink outline-none transition-colors focus:border-brand"
           >
@@ -148,7 +188,7 @@ export function OrderTicket(): ReactNode {
             id="order-quantity"
             value={quantityText}
             onChange={(event) => {
-              setQuantityText(event.target.value)
+              setTypedQuantity(event.target.value)
             }}
             inputMode="decimal"
             autoComplete="off"
@@ -250,9 +290,20 @@ export function OrderTicket(): ReactNode {
         </div>
       </Field>
 
+      {permissionBlocked && (
+        <p
+          className="text-[10px] leading-tight text-warn"
+          role="status"
+          data-testid="order-entitlement-block"
+        >
+          {permission.allowed ? '' : permission.reason}
+        </p>
+      )}
+
       <Button
         type="submit"
         variant={direction === 'Buy' ? 'buy' : 'sell'}
+        disabled={permissionBlocked}
         data-testid="order-submit"
         className="mt-0.5 w-full"
       >

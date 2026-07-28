@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { Symbol_ } from '@/domain'
+import { visibleInstruments } from '@/domain'
 import { Panel } from '@/components/Panel'
 import { useCurrencyPairs } from '@/hooks/useMarketData'
-import { DEFAULT_TILE_SYMBOLS } from '@/services'
+import { useSessionConfig } from '@/app/ServicesContext'
+import { useUser } from '@/app/AuthContext'
 import { cn } from '@/lib/cn'
 import { SpotTile } from './SpotTile'
 
@@ -15,16 +17,37 @@ import { SpotTile } from './SpotTile'
  * build keeps the seam obvious instead of baking in a storage choice.
  */
 export function SpotTileGrid(): ReactNode {
-  const pairs = useCurrencyPairs()
-  const [openSymbols, setOpenSymbols] = useState<readonly Symbol_[]>(DEFAULT_TILE_SYMBOLS)
+  const allPairs = useCurrencyPairs()
+  const config = useSessionConfig()
+  const user = useUser()
 
-  const toggle = useCallback((symbol: Symbol_) => {
-    setOpenSymbols((current) =>
-      current.includes(symbol)
-        ? current.filter((existing) => existing !== symbol)
-        : [...current, symbol]
-    )
-  }, [])
+  // An instrument the user is not entitled to see is absent, not disabled.
+  const pairs = useMemo(() => visibleInstruments(user, allPairs), [user, allPairs])
+
+  // `null` means "not customised yet", so the default set is derived from the
+  // session config and the user's entitlements rather than snapshotted on a
+  // first render where neither has resolved.
+  const [customised, setCustomised] = useState<readonly Symbol_[] | null>(null)
+
+  const openSymbols = useMemo(
+    () =>
+      (customised ?? config.defaultTileSymbols).filter((symbol) =>
+        pairs.some((pair) => pair.symbol === symbol)
+      ),
+    [customised, config.defaultTileSymbols, pairs]
+  )
+
+  const toggle = useCallback(
+    (symbol: Symbol_) => {
+      setCustomised((current) => {
+        const base = current ?? config.defaultTileSymbols
+        return base.includes(symbol)
+          ? base.filter((existing) => existing !== symbol)
+          : [...base, symbol]
+      })
+    },
+    [config.defaultTileSymbols]
+  )
 
   const openPairs = useMemo(
     () =>

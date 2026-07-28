@@ -34,8 +34,10 @@ one of them rebuilds it.
 
 This repository is the argument that the UI can be a separate, licensable layer:
 
-- **The UI owns no data.** It depends on four interfaces (`MarketDataPort`, `ExecutionPort`,
-  `OrderPort`, `TradePort`) and nothing else. See [`src/services/ports.ts`](src/services/ports.ts).
+- **The UI owns no data.** It depends on five interfaces (`MarketDataPort`, `ExecutionPort`,
+  `OrderPort`, `TradePort`, `AuthPort`) and nothing else. See
+  [`src/services/ports.ts`](src/services/ports.ts). The live-venue adapter in `src/services/live/`
+  is a second implementation of `MarketDataPort`, so the claim is demonstrable rather than asserted.
 - **The UI holds no money and touches no client record.** It is a rendering and order-entry layer
   installed inside the licensee's environment, pointed at the licensee's own venue.
 - **The UI is re-skinnable without a fork.** Every colour, radius and font resolves to a CSS custom
@@ -46,17 +48,20 @@ a UI-only licence is priced and sold — is in [`docs/business-model.md`](docs/b
 
 ## What is in the box
 
-| Area                 | What it does                                                                                                                                                                                                                      |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Spot tiles**       | Live two-way prices split into big figure / pips / fractional pip, tick flash, notional entry in desk shorthand (`1m`, `250k`, `2bn`), one-click execution, in-flight and result overlays including the venue's rejection reason. |
-| **Blotter**          | Every ticket attempted this session — dealt and rejected — sortable on any column, filterable by status and free text, exportable to RFC 4180 CSV.                                                                                |
-| **Analytics**        | Position book marked on every tick, realised/unrealised split, session P&L chart, and net open position per currency. All P&L is converted to a single reporting currency before it is summed.                                    |
-| **Order management** | Market and limit orders, GTC / IOC / FOK, resting orders that fill the moment the market prints through them, clip-by-clip partial fills with VWAP, per-order cancel.                                                             |
-| **Live rates**       | Full market watch across every quoted instrument with spread, session change in pips and a trend line.                                                                                                                            |
-| **Chrome**           | Transport health and latency, session counts, clock, dark/light themes that follow the OS until the user chooses.                                                                                                                 |
+| Area                        | What it does                                                                                                                                                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Spot tiles**              | Live two-way prices split into big figure / pips / fractional pip, tick flash, notional entry in desk shorthand (`1m`, `250k`, `2bn`), one-click execution, in-flight and result overlays including the venue's rejection reason.                                             |
+| **Blotter**                 | Every ticket attempted this session — dealt and rejected — sortable on any column, filterable by status and free text, exportable to RFC 4180 CSV.                                                                                                                            |
+| **Analytics**               | Position book marked on every tick, realised/unrealised split, session P&L chart, and net open position per currency. All P&L is converted to a single reporting currency before it is summed.                                                                                |
+| **Order management**        | Market and limit orders, GTC / IOC / FOK, resting orders that fill the moment the market prints through them, clip-by-clip partial fills with VWAP, per-order cancel.                                                                                                         |
+| **Live rates**              | Full market watch across every quoted instrument with spread, session change in pips and a trend line.                                                                                                                                                                        |
+| **Identity & entitlements** | Sign-in with three seeded users on deliberately different mandates. Instruments a user is not entitled to are absent, not disabled; a size beyond their limit disables dealing and says why. The same pure rules gate the tile and the order ticket, so they cannot disagree. |
+| **Live venue feed**         | Optional real market data from Coinbase or Binance public streams, with reconnection, exponential backoff and stale-feed detection. Execution stays simulated — no order ever leaves the browser.                                                                             |
+| **Chrome**                  | Transport health and latency, session counts, clock, dark/light themes that follow the OS until the user chooses.                                                                                                                                                             |
 
-Ten G10 pairs are quoted, deliberately mixing 5-decimal majors and 3-decimal yen crosses — that is
-where rate-formatting bugs hide.
+Ten G10 pairs on the demo feed, deliberately mixing 5-decimal majors and 3-decimal yen crosses —
+that is where rate-formatting bugs hide. Six crypto pairs on the live feed, which exercises the same
+rate maths at a completely different order of magnitude.
 
 ## Running it
 
@@ -66,12 +71,31 @@ npm install && npm run dev
 
 Then open <http://localhost:5173>.
 
+Sign in as any of the three seeded users — the interesting one is **M. Halvorsen (Risk & Control)**,
+who sees every price and can deal nothing.
+
 The demo feed is deterministic. Pin it with a seed to get an identical session every time — the
 same opening rates, the same seeded blotter, the same sequence of venue rejections:
 
 ```bash
 open "http://localhost:5173/?seed=4242"
 ```
+
+### Live venue prices
+
+Point the same UI at a real exchange's public market data stream. No credentials, no entitlement,
+nothing to configure:
+
+```bash
+open "http://localhost:5173/?feed=live&venue=coinbase"
+```
+
+`venue=binance` works too. This is the adapter architecture being demonstrated rather than asserted:
+prices come from a real venue, every component above the port is unchanged, and the composition root
+is the only file that knows the difference.
+
+**Execution remains simulated in every mode.** No order leaves the browser, and the status bar says
+so.
 
 ## Verifying it
 
@@ -86,10 +110,11 @@ build. The end-to-end suite is separate because it builds and serves the app fir
 npm run test:e2e
 ```
 
-| Suite                                       | Count | Notes                                               |
-| ------------------------------------------- | ----- | --------------------------------------------------- |
-| Unit / component (Vitest + Testing Library) | 390   | 99% statements, 95% branches, enforced by threshold |
-| End-to-end (Playwright)                     | 122   | Desktop Chromium, desktop Firefox, mobile Chrome    |
+| Suite                                           | Count | Notes                                                      |
+| ----------------------------------------------- | ----- | ---------------------------------------------------------- |
+| Unit / component (Vitest + Testing Library)     | 478   | 99% statements, 95% branches, enforced by threshold        |
+| End-to-end (Playwright)                         | 152   | Desktop Chromium, desktop Firefox, mobile Chrome           |
+| Live-venue end-to-end (`npm run test:e2e:live`) | 7     | Opt-in; hits real exchange feeds, so CI is not gated on it |
 
 Everything time- or randomness-dependent is injectable: the price feed takes a seeded generator and
 a clock, the execution venue takes a `delay` function, and component tests drive prices by hand
@@ -101,8 +126,9 @@ through a stub in [`src/test/harness.tsx`](src/test/harness.tsx). No test sleeps
 src/
   domain/      Pure business logic — pricing maths, position keeping, order rules, formatting.
                No React, no RxJS, no transport. 100% unit tested.
-  services/    ports.ts defines the four interfaces the UI is written against.
-               mock/ is one implementation; a licensee's gateway is another.
+  services/    ports.ts defines the five interfaces the UI is written against.
+               mock/ is the deterministic demo back end.
+               live/ is a real venue feed behind the same MarketDataPort.
                create-services.ts is the only file that names a concrete adapter.
   hooks/       Observable-to-React bridge (useSyncExternalStore, so a fast feed cannot tear).
   components/  Design-system primitives: Panel, Button, Sparkline.
@@ -117,7 +143,8 @@ in `domain` knows the UI exists, and nothing in `features` knows which adapter i
 
 ### Connecting a real back end
 
-Implement the four ports and return them from `createServices()`:
+Implement the ports and return them from `createServices()`. `live/` already does exactly this for
+market data — it is a worked example rather than a description:
 
 ```ts
 export function createServices(): Services {
@@ -127,6 +154,7 @@ export function createServices(): Services {
     execution: new YourExecutionAdapter(socket),
     orders: new YourOrderAdapter(socket),
     trades: new YourTradeStore(socket),
+    auth: new YourOidcAuth(config),
     dispose: () => socket.close(),
   }
 }
@@ -165,6 +193,13 @@ One codebase, a differently-branded bundle per licensee, no fork.
   trading. A blank dealing screen is the worst possible outcome.
 - **The demo back end is a module-level singleton.** Tying it to a component's effect cleanup means
   React StrictMode's double-mount tears the connection down in development.
+- **Limits are layered and the tightest one speaks.** A trader's own mandate, the venue credit line
+  and the ticket cap are separate checks; the user is told about whichever actually binds.
+- **Permission feedback is live, validation feedback waits for submit.** An empty quantity box fails
+  the entitlement check too, but nagging about it mid-keystroke is what "quiet until submitted"
+  exists to prevent.
+- **The stale-price tolerance is in basis points, not pips.** Six pips is half a basis point on
+  EURUSD and six cents on Bitcoin; a pip-denominated tolerance rejects almost every crypto ticket.
 
 ## Provenance and scope
 
@@ -173,11 +208,12 @@ The feature set is modelled on [Reactive Trader Cloud](https://github.com/Adapti
 an independent implementation written from that feature brief — no code was copied — with an
 adapter architecture and an OMS panel added to make the UI-only licensing model concrete.
 
-**This is a reference implementation, not a production trading system.** Prices and execution are
-simulated; there is no authentication, entitlement model, audit trail, venue connectivity or
-persistence. What it demonstrates is the architecture, the domain correctness and the engineering
-standard — see [`docs/production-readiness.md`](docs/production-readiness.md) for an honest map of
-the distance between this and a deployed system, which is also how we scope client work.
+**This is a reference implementation, not a production trading system.** Execution is simulated in
+every mode. Authentication is a demo provider, entitlements are enforced only in the browser, and
+there is no audit trail, order gateway or persistence. What it demonstrates is the architecture, the
+domain correctness and the engineering standard — see
+[`docs/production-readiness.md`](docs/production-readiness.md) for an honest map of the distance
+between this and a deployed system, which is also how we scope client work.
 
 ## Who built this
 

@@ -7,7 +7,9 @@ import {
   spotValueDate,
   spreadInPips,
 } from '@/domain'
+import { canDeal } from '@/domain'
 import { useServices } from '@/app/ServicesContext'
+import { useUser } from '@/app/AuthContext'
 import { useToasts } from '@/app/ToastContext'
 import { usePrice, usePriceHistory } from '@/hooks/useMarketData'
 import { Sparkline } from '@/components/Sparkline'
@@ -39,6 +41,7 @@ export interface SpotTileProps {
 export function SpotTile({ pair }: SpotTileProps): ReactNode {
   const { execution, trades } = useServices()
   const { push } = useToasts()
+  const user = useUser()
   const price = usePrice(pair.symbol)
   const history = usePriceHistory(pair.symbol, 32)
 
@@ -48,6 +51,15 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
 
   const notional = useMemo(() => parseNotional(notionalText), [notionalText])
   const notionalInvalid = notional === undefined || notional <= 0
+
+  // Entitlement is checked against the size actually in the box, so a junior on
+  // a 2m mandate sees the tile go dead the moment they type 5m — and is told
+  // why. A dead control with no explanation generates a support call.
+  const permission = useMemo(
+    () => canDeal(user, pair.symbol, notional ?? 0),
+    [user, pair.symbol, notional]
+  )
+  const blocked = notionalInvalid || !permission.allowed
 
   useEffect(
     () => () => {
@@ -65,7 +77,7 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
 
   const handleExecute = useCallback(
     (direction: Direction) => {
-      if (!price || notional === undefined || notionalInvalid) return
+      if (!price || notional === undefined || blocked) return
 
       setState({ kind: 'executing', direction })
       const rate = direction === 'Buy' ? price.ask : price.bid
@@ -99,7 +111,7 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
           push({ tone: 'error', title: `${pair.symbol} execution failed`, detail: reason })
         })
     },
-    [execution, notional, notionalInvalid, pair, price, push, scheduleReset, trades]
+    [blocked, execution, notional, pair, price, push, scheduleReset, trades]
   )
 
   // Taken from the quote clock rather than the browser's, so the tile shows the
@@ -142,7 +154,7 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
             price={price}
             pair={pair}
             notional={notional}
-            disabled={busy || notionalInvalid}
+            disabled={busy || blocked}
             onExecute={handleExecute}
           />
           <RateButton
@@ -150,7 +162,7 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
             price={price}
             pair={pair}
             notional={notional}
-            disabled={busy || notionalInvalid}
+            disabled={busy || blocked}
             onExecute={handleExecute}
           />
         </div>
@@ -163,21 +175,32 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
         </div>
       )}
 
-      <footer className="flex items-center gap-2">
-        <NotionalInput
-          value={notionalText}
-          onChange={setNotionalText}
-          currency={pair.base}
-          invalid={notionalInvalid}
-          disabled={busy}
-          symbol={pair.symbol}
-        />
-        <span
-          className="shrink-0 text-[10px] font-medium tracking-wide text-ink-subtle"
-          title="Spot value date"
-        >
-          SP {formatShortDate(valueDate)}
-        </span>
+      <footer className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <NotionalInput
+            value={notionalText}
+            onChange={setNotionalText}
+            currency={pair.base}
+            invalid={notionalInvalid || !permission.allowed}
+            disabled={busy}
+            symbol={pair.symbol}
+          />
+          <span
+            className="shrink-0 text-[10px] font-medium tracking-wide text-ink-subtle"
+            title="Spot value date"
+          >
+            SP {formatShortDate(valueDate)}
+          </span>
+        </div>
+        {!permission.allowed && !notionalInvalid && (
+          <p
+            className="text-[10px] leading-tight text-warn"
+            role="status"
+            data-testid={`entitlement-block-${pair.symbol}`}
+          >
+            {permission.reason}
+          </p>
+        )}
       </footer>
 
       {state.kind !== 'idle' && <TileOverlay state={state} pair={pair} />}

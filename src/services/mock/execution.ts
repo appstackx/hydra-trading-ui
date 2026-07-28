@@ -1,13 +1,21 @@
 import type { Price, Symbol_, Trade } from '@/domain'
-import { rateForDirection, spotValueDate, toPips } from '@/domain'
+import { rateForDirection, spotValueDate } from '@/domain'
 import type { ExecutionPort, ExecutionRequest, ExecutionResult } from '../ports'
 import { INSTRUMENTS_BY_SYMBOL } from './instruments'
 import type { Random } from './random'
 
 /** Baseline probability that the venue rejects an otherwise valid ticket. */
 const REJECTION_PROBABILITY = 0.06
-/** How far the market may move from the clicked rate before it is stale, in pips. */
-const STALE_PRICE_TOLERANCE_PIPS = 6
+/**
+ * How far the market may move from the clicked rate before it is stale, in
+ * basis points.
+ *
+ * Deliberately not pips: a pip is worth wildly different amounts across asset
+ * classes — six pips is half a basis point on EURUSD and six cents on Bitcoin —
+ * so a pip-denominated tolerance rejects almost every crypto ticket. Basis
+ * points are proportional and port across everything the UI quotes.
+ */
+const STALE_PRICE_TOLERANCE_BPS = 5
 /** Notional above which the simulated credit line refuses the ticket. */
 const CREDIT_LIMIT = 50_000_000
 
@@ -87,14 +95,13 @@ export class MockExecution implements ExecutionPort {
       return `Notional exceeds the ${CREDIT_LIMIT.toLocaleString('en-GB')} credit line`
     }
 
-    const pair = INSTRUMENTS_BY_SYMBOL[request.symbol]
     const price = this.getPrice(request.symbol)
 
-    if (pair && price) {
+    if (price && request.rate > 0) {
       const current = rateForDirection(price, request.direction)
-      const driftPips = Math.abs(toPips(current - request.rate, pair))
-      if (driftPips > STALE_PRICE_TOLERANCE_PIPS) {
-        return `Price moved ${driftPips.toFixed(1)} pips before the trade reached the venue`
+      const driftBps = Math.abs((current - request.rate) / request.rate) * 10_000
+      if (driftBps > STALE_PRICE_TOLERANCE_BPS) {
+        return `Price moved ${driftBps.toFixed(1)} bps before the trade reached the venue`
       }
     }
 

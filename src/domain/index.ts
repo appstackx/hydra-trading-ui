@@ -1,4 +1,5 @@
 export * from './types'
+export * from './auth'
 export * from './pricing'
 export * from './positions'
 export * from './orders'

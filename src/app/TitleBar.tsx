@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react'
+import { initialsOf, roleLabel } from '@/domain'
 import { BRAND } from '@/theme/brand'
+import { cn } from '@/lib/cn'
 import { useTheme } from './ThemeContext'
+import { useAuth } from './AuthContext'
 
 /**
  * Product chrome. Every string and the accent mark come from {@link BRAND}, so a
@@ -8,6 +11,7 @@ import { useTheme } from './ThemeContext'
  */
 export function TitleBar(): ReactNode {
   const { theme, toggleTheme } = useTheme()
+  const { user, signOut } = useAuth()
 
   return (
     <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-panel px-3">
@@ -31,10 +35,41 @@ export function TitleBar(): ReactNode {
           href={BRAND.vendorUrl}
           target="_blank"
           rel="noreferrer noopener"
-          className="hidden text-[11px] font-medium text-ink-subtle transition-colors hover:text-ink md:block"
+          className="hidden text-[11px] font-medium text-ink-subtle transition-colors hover:text-ink lg:block"
         >
           by {BRAND.vendorName}
         </a>
+
+        {user && (
+          <div className="flex items-center gap-2" data-testid="current-user">
+            <span
+              className={cn(
+                'grid size-6 shrink-0 place-items-center rounded-full text-[9px] font-bold',
+                user.entitlements.canTrade ? 'bg-brand-soft text-brand' : 'bg-panel-hover text-ink-muted'
+              )}
+              aria-hidden="true"
+            >
+              {initialsOf(user.name)}
+            </span>
+            <span className="hidden leading-tight sm:block">
+              <span className="block text-[11px] font-medium text-ink">{user.name}</span>
+              <span className="block text-[10px] text-ink-subtle">
+                {roleLabel(user.role)} · {user.desk}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                void signOut()
+              }}
+              data-testid="sign-out"
+              className="rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold text-ink-subtle transition-colors hover:bg-panel-hover hover:text-ink"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={toggleTheme}

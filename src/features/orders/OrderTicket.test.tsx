@@ -109,14 +109,17 @@ describe('OrderTicket', () => {
 
   it('refuses a quantity above the ticket limit', async () => {
     const user = userEvent.setup()
-    renderTicket()
+    const { services } = renderTicket()
 
     await user.clear(screen.getByTestId('order-quantity'))
     await user.type(screen.getByTestId('order-quantity'), '500m')
-    await user.type(screen.getByTestId('order-limit'), '1.08')
-    await user.click(screen.getByTestId('order-submit'))
 
-    expect(await screen.findByText(/exceeds the/)).toBeInTheDocument()
+    // Limits are layered: the signed-in trader's own mandate binds well before
+    // the venue-wide ticket cap, so that is the message the user should see.
+    // `validateOrderDraft` covers the venue cap exhaustively in its own test.
+    expect(await screen.findByTestId('order-entitlement-block')).toHaveTextContent(/exceeds/i)
+    expect(screen.getByTestId('order-submit')).toBeDisabled()
+    expect(services.orderList.value).toHaveLength(0)
   })
 
   it('stays quiet about errors until the ticket is submitted', async () => {

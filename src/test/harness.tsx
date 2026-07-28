@@ -9,18 +9,23 @@ import type {
   Price,
   Symbol_,
   Trade,
+  User,
 } from '@/domain'
 import { validateOrderDraft } from '@/domain'
 import type {
+  AppServices,
+  AuthPort,
   ExecutionPort,
   ExecutionRequest,
   ExecutionResult,
   MarketDataPort,
   OrderPort,
-  Services,
+  SessionConfig,
   TradePort,
 } from '@/services'
+import { DEMO_USERS } from '@/services'
 import { ServicesProvider } from '@/app/ServicesContext'
+import { AuthProvider } from '@/app/AuthContext'
 import { ThemeProvider } from '@/app/ThemeContext'
 import { ToastProvider } from '@/app/ToastContext'
 import { EURUSD, USDJPY, price as makePrice } from './fixtures'
@@ -40,9 +45,11 @@ export interface TestServicesOptions {
    * after a reconnect.
    */
   readonly seedPrices?: boolean
+  /** Who is signed in. `null` renders the sign-in screen. */
+  readonly user?: User | null
 }
 
-export class TestServices implements Services {
+export class TestServices implements AppServices {
   readonly prices = new Map<Symbol_, ReplaySubject<Price>>()
   private readonly latest = new Map<Symbol_, Price>()
   readonly tradeList = new BehaviorSubject<readonly Trade[]>([])
@@ -74,6 +81,8 @@ export class TestServices implements Services {
   })
 
   readonly pairs: readonly CurrencyPair[]
+  /** Signed in as the unrestricted trader by default; override per test. */
+  readonly currentUser: BehaviorSubject<User | null>
 
   constructor(
     pairs: readonly CurrencyPair[] = [EURUSD, USDJPY],
@@ -86,6 +95,16 @@ export class TestServices implements Services {
     if (options.seedPrices ?? true) {
       for (const pair of pairs) this.tick(pair.symbol)
     }
+    // `??` would swallow an explicit `null`, which is how a test asks for the
+    // signed-out state.
+    this.currentUser = new BehaviorSubject<User | null>(
+      options.user === undefined ? (DEMO_USERS[0] ?? null) : options.user
+    )
+  }
+
+  /** Switches the signed-in user mid-test, to exercise entitlement changes. */
+  signInAs(user: User | null): void {
+    this.currentUser.next(user)
   }
 
   /** Pushes a new quote for one instrument and refreshes the aggregate. */
@@ -153,7 +172,32 @@ export class TestServices implements Services {
     },
   }
 
+  readonly auth: AuthPort = {
+    users: DEMO_USERS,
+    currentUser$: () => this.currentUser.asObservable(),
+    signIn: (userId, passphrase) => {
+      const user = DEMO_USERS.find((candidate) => candidate.id === userId)
+      if (!user) return Promise.reject(new Error('Unknown user'))
+      if (passphrase.trim() === '') return Promise.reject(new Error('Enter a passphrase'))
+      this.currentUser.next(user)
+      return Promise.resolve(user)
+    },
+    signOut: () => {
+      this.currentUser.next(null)
+      return Promise.resolve()
+    },
+  }
+
+  get config(): SessionConfig {
+    return {
+      feed: 'demo',
+      instruments: this.pairs,
+      defaultTileSymbols: this.pairs.map((pair) => pair.symbol),
+    }
+  }
+
   dispose(): void {
+    this.currentUser.complete()
     for (const subject of this.prices.values()) subject.complete()
     this.tradeList.complete()
     this.orderList.complete()
@@ -194,7 +238,9 @@ export function renderWithServices(
     return (
       <ThemeProvider>
         <ToastProvider>
-          <ServicesProvider services={services}>{children}</ServicesProvider>
+          <ServicesProvider services={services}>
+            <AuthProvider>{children}</AuthProvider>
+          </ServicesProvider>
         </ToastProvider>
       </ThemeProvider>
     )

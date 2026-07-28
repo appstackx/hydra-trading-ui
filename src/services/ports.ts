@@ -8,6 +8,7 @@ import type {
   Price,
   Symbol_,
   Trade,
+  User,
 } from '@/domain'
 
 /**
@@ -62,11 +63,21 @@ export interface TradePort {
   record(trade: Trade): void
 }
 
+export interface AuthPort {
+  /** Signed-in user, or `null`. Emits immediately with the current state. */
+  currentUser$(): Observable<User | null>
+  /** Users offered on the sign-in screen. A real provider would not expose this. */
+  readonly users: readonly User[]
+  signIn(userId: string, passphrase: string): Promise<User>
+  signOut(): Promise<void>
+}
+
 export interface Services {
   readonly marketData: MarketDataPort
   readonly execution: ExecutionPort
   readonly orders: OrderPort
   readonly trades: TradePort
+  readonly auth: AuthPort
   /** Releases timers and subscriptions. Called on unmount and in tests. */
   dispose(): void
 }

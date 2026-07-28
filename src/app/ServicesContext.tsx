@@ -1,10 +1,15 @@
 import { createContext, useContext, type ReactNode } from 'react'
-import { createServices, seedFromSearch, type Services } from '@/services'
+import {
+  createServices,
+  seedFromSearch,
+  sessionOptionsFromSearch,
+  type AppServices,
+} from '@/services'
 
-const ServicesContext = createContext<Services | null>(null)
+const ServicesContext = createContext<AppServices | null>(null)
 
 /**
- * The demo back end is a process-wide singleton, exactly as a real socket to a
+ * The back end is a process-wide singleton, exactly as a real socket to a
  * pricing gateway would be.
  *
  * It is deliberately not created inside the component and torn down on unmount:
@@ -13,11 +18,13 @@ const ServicesContext = createContext<Services | null>(null)
  * the UI happily keeps rendering their last replayed value. Owning it at module
  * scope means one connection per page, whatever React does to the tree.
  */
-let defaultServices: Services | undefined
+let defaultServices: AppServices | undefined
 
-function getDefaultServices(): Services {
+function getDefaultServices(): AppServices {
+  const search = typeof window === 'undefined' ? '' : window.location.search
   defaultServices ??= createServices({
-    seed: seedFromSearch(typeof window === 'undefined' ? '' : window.location.search),
+    ...sessionOptionsFromSearch(search),
+    seed: seedFromSearch(search),
   })
   return defaultServices
 }
@@ -34,7 +41,7 @@ export interface ServicesProviderProps {
    * Injected by tests and Storybook, which own the lifecycle of what they pass
    * in. Omitted in the deployed app, which uses the shared instance.
    */
-  readonly services?: Services
+  readonly services?: AppServices
 }
 
 export function ServicesProvider({ children, services }: ServicesProviderProps): ReactNode {
@@ -46,10 +53,15 @@ export function ServicesProvider({ children, services }: ServicesProviderProps):
 }
 
 /** Access to the ports. Throws outside a provider rather than returning null. */
-export function useServices(): Services {
+export function useServices(): AppServices {
   const services = useContext(ServicesContext)
   if (!services) {
     throw new Error('useServices must be used within a <ServicesProvider>')
   }
   return services
+}
+
+/** How this session was assembled: feed mode, instruments, default tiles. */
+export function useSessionConfig(): AppServices['config'] {
+  return useServices().config
 }

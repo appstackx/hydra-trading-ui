@@ -150,13 +150,14 @@ test.describe('order management', () => {
     await expect(page.getByTestId('order-book-empty')).toBeVisible()
   })
 
-  test('refuses a quantity above the ticket limit', async ({ page }) => {
+  test('refuses a quantity above the trader mandate', async ({ page }) => {
     await page.getByTestId('order-quantity').fill('500m')
     await page.getByTestId('order-limit').fill(await limitRelativeToMarket(page, -0.02))
 
-    await page.getByTestId('order-submit').click()
-
-    await expect(page.getByText(/exceeds the/)).toBeVisible()
+    // Limits are layered — mandate, venue credit line, ticket cap — and the
+    // tightest applicable one is what the user is told about.
+    await expect(page.getByTestId('order-entitlement-block')).toContainText(/exceeds/i)
+    await expect(page.getByTestId('order-submit')).toBeDisabled()
     await expect(page.getByTestId('order-book-empty')).toBeVisible()
   })
 

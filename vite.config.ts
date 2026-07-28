@@ -11,8 +11,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
-    strictPort: true,
+    // Honours PORT when the harness assigns one, so the dev server can coexist
+    // with whatever else is already on 5173.
+    port: Number(process.env.PORT ?? 5173),
   },
   preview: {
     port: 4173,

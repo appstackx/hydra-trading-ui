@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { ConnectionStatus } from '@/domain'
 import { formatTime } from '@/domain'
 import { useConnection, useOrders, useTrades } from '@/hooks/useMarketData'
+import { useSessionConfig } from './ServicesContext'
 import { isWorking } from '@/domain'
 import { cn } from '@/lib/cn'
 
@@ -31,6 +32,7 @@ const CLOCK_INTERVAL_MS = 1_000
  */
 export function StatusBar(): ReactNode {
   const connection = useConnection()
+  const config = useSessionConfig()
   const trades = useTrades()
   const orders = useOrders()
   const now = useClock()
@@ -53,6 +55,24 @@ export function StatusBar(): ReactNode {
 
       <span className="tnum hidden text-ink-subtle sm:inline" data-testid="latency">
         {connection.latencyMs} ms
+      </span>
+
+      {/* Whether prices are real matters more than anything else on this bar,
+          so it is stated rather than left to be inferred from the instruments. */}
+      <span
+        data-testid="feed-mode"
+        data-feed={config.feed}
+        title={
+          config.feed === 'live'
+            ? 'Live venue prices. Execution is still simulated — no order leaves this browser.'
+            : 'Simulated prices and execution, reproducible from the seed in the URL.'
+        }
+        className={cn(
+          'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+          config.feed === 'live' ? 'bg-buy-soft text-buy' : 'bg-panel-hover text-ink-subtle'
+        )}
+      >
+        {config.feed === 'live' ? 'Live prices · sim execution' : 'Demo feed'}
       </span>
 
       <span className="ml-auto flex items-center gap-3">

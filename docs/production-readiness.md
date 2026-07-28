@@ -31,7 +31,12 @@ Ordered roughly by the sequence a real deployment needs them.
 
 ### 1. Venue connectivity — the largest single item
 
-**Today:** a simulated feed and a simulated execution venue, both deterministic and seeded.
+**Today:** market data is real when the session is opened with `?feed=live` — a working adapter
+against Coinbase or Binance public streams, with reconnection, exponential backoff and stale-feed
+detection. Execution is simulated in every mode.
+
+The reconnection, health and normalisation machinery is therefore already written and tested; what
+is missing is the order side and the client's own protocol.
 
 **Needed:** a real adapter against the client's infrastructure. Typically FIX 4.4 or 5.0 SP2 for
 orders and execution reports, plus a streaming price source (FIX market data, a proprietary
