@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { emitTelemetry } from '@/lib/telemetry'
 
 interface ErrorBoundaryProps {
   readonly children: ReactNode
@@ -26,6 +27,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error(`[${this.props.label}] render failed`, error, info.componentStack)
+    emitTelemetry('ui.panel-error', { panel: this.props.label, message: error.message })
   }
 
   private readonly retry = (): void => {

@@ -23,6 +23,12 @@ export interface Entitlements {
   readonly canTrade: boolean
   /** Whether the user may cancel orders they did not raise. */
   readonly canCancelAnyOrder: boolean
+  /**
+   * Whether the user may halt and resume dealing desk-wide. Deliberately
+   * independent of `canTrade`: on a real desk the person who throws the kill
+   * switch is usually in risk control and cannot deal at all.
+   */
+  readonly canOperateKillSwitch: boolean
 }
 
 export interface User {
@@ -40,6 +46,12 @@ export const VIEWER_ENTITLEMENTS: Entitlements = {
   maxNotional: 0,
   canTrade: false,
   canCancelAnyOrder: false,
+  canOperateKillSwitch: false,
+}
+
+/** Whether the user may halt and resume dealing desk-wide. */
+export function canOperateKillSwitch(user: User | null): boolean {
+  return user?.entitlements.canOperateKillSwitch ?? false
 }
 
 /** True when the user may see this instrument at all. */

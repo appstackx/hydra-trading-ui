@@ -20,6 +20,7 @@ const trader: User = {
     maxNotional: 25_000_000,
     canTrade: true,
     canCancelAnyOrder: true,
+    canOperateKillSwitch: true,
   },
 }
 
@@ -33,6 +34,7 @@ const junior: User = {
     maxNotional: 2_000_000,
     canTrade: true,
     canCancelAnyOrder: false,
+    canOperateKillSwitch: false,
   },
 }
 

@@ -19,9 +19,24 @@ These are not stubbed and would not be rewritten on the way to a deployment:
   simulated back end for a real venue is a change to one composition-root file.
 - **Rendering under load.** Per-instrument subscriptions, `useSyncExternalStore` so a fast feed
   cannot tear, CSS-driven tick animation that costs no React render.
-- **Engineering standard.** 512 tests (390 unit and component, 122 end-to-end across three browser
-  targets), enforced coverage thresholds, strict TypeScript with no escape hatches, zero-warning
-  lint, CI on every push.
+- **Engineering standard.** 750+ tests (586 unit and component, 180 end-to-end across three
+  browser targets, 7 opt-in against live venues), enforced coverage thresholds, strict TypeScript
+  with no escape hatches, zero-warning lint, CI on every push.
+- **Risk controls.** A desk kill switch — operated from the UI by entitled users, persisted so
+  neither a refresh nor a URL parameter can quietly release it, enforced again in the service
+  layer so a disabled button is never the only control, and audited on both transitions. A daily
+  loss limit that latches with hysteresis (no flapping at the threshold), also service-enforced
+  and audited both ways, and a fat-finger check on limit prices in basis points. Order-cancel
+  ownership is enforced in the service layer as well as the UI.
+- **Audit capture.** Every session transition, ticket, fill, cancellation and kill-switch
+  transition recorded with user, timestamp, sequence number — and for a trade, the exact quote on
+  screen at the moment of the click. On-screen viewer, RFC 4180 CSV export, bounded persisted
+  buffer.
+- **Session continuity.** Blotter, working orders and the audit trail survive a refresh; restored
+  id sequences continue rather than reissue; resting orders resume matching. Orders carry an
+  owner, and cancel rights follow ownership.
+- **Stale-quote suspension.** On live feeds, a tile whose quote is older than the threshold stops
+  dealing and says so — a price nobody stands behind is worse than no price.
 - **Accessibility and theming.** Keyboard operable, screen-reader labelled, reduced-motion aware,
   design tokens throughout, dark and light themes.
 
@@ -70,7 +85,9 @@ _Indicative: 1–2 weeks, assuming the client has somewhere to put the records._
 
 ### 4. Server-side position keeping
 
-**Today:** positions and P&L are derived client-side from the session's trade list.
+**Today:** positions and P&L are derived client-side from the session's trade list. The trade list
+itself now survives a refresh, which is continuity for the person at the screen — it is explicitly
+not a book of record.
 
 **Needed:** positions from the client's book of record, reconciled at start of day and on
 reconnection. A dealing screen must never be the source of truth for risk.

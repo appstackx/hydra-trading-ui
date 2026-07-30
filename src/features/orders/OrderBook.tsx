@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { Order, OrderStatus } from '@/domain'
-import { formatNotional, formatTime, isWorking, remainingQuantity } from '@/domain'
+import { canCancel, formatNotional, formatTime, isWorking, remainingQuantity } from '@/domain'
 import { useServices } from '@/app/ServicesContext'
+import { useUser } from '@/app/AuthContext'
 import { useCurrencyPairs, useOrders } from '@/hooks/useMarketData'
 import { cn } from '@/lib/cn'
 
@@ -20,7 +21,8 @@ const STATUS_STYLES: Record<OrderStatus, string> = {
  * visibly completes the moment the market trades through it.
  */
 export function OrderBook(): ReactNode {
-  const { orders: orderService } = useServices()
+  const { orders: orderService, audit } = useServices()
+  const user = useUser()
   const orders = useOrders()
   const pairs = useCurrencyPairs()
   const [showCompleted, setShowCompleted] = useState(true)
@@ -39,9 +41,14 @@ export function OrderBook(): ReactNode {
 
   const handleCancel = useCallback(
     (orderId: string) => {
-      void orderService.cancel(orderId)
+      // "Requested", not "cancelled": the order can fill in the race between
+      // the click and the book, and the audit trail must not claim otherwise.
+      // The order's actual terminal state is its own record.
+      void orderService.cancel(orderId).then(() => {
+        audit.record('order.cancelled', `Cancel requested for ${orderId}`, { orderId })
+      })
     },
-    [orderService]
+    [audit, orderService]
   )
 
   return (
@@ -80,6 +87,10 @@ export function OrderBook(): ReactNode {
               key={order.id}
               order={order}
               precision={precisionOf(order.symbol)}
+              // Cancel rights are the owner's, unless the user carries the
+              // cancel-any entitlement — the senior can pull the desk's orders,
+              // the junior only their own.
+              canCancel={canCancel(user, order.ownerId)}
               onCancel={handleCancel}
             />
           ))}
@@ -92,10 +103,12 @@ export function OrderBook(): ReactNode {
 function OrderRow({
   order,
   precision,
+  canCancel: cancellable,
   onCancel,
 }: {
   readonly order: Order
   readonly precision: number
+  readonly canCancel: boolean
   readonly onCancel: (orderId: string) => void
 }): ReactNode {
   const progress = (order.filledQuantity / order.quantity) * 100
@@ -123,7 +136,7 @@ function OrderRow({
         >
           {order.status}
         </span>
-        {isWorking(order) && (
+        {isWorking(order) && cancellable && (
           <button
             type="button"
             onClick={() => {
@@ -142,6 +155,7 @@ function OrderRow({
         <span className="tnum">{formatTime(order.createdAt)}</span>
         <span>{order.orderType}</span>
         <span>{order.timeInForce}</span>
+        <span data-testid={`order-owner-${order.id}`}>{order.ownerName}</span>
         {order.filledQuantity > 0 && (
           <span className="tnum text-ink-muted">
             {formatNotional(order.filledQuantity)} filled @{' '}

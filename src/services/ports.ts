@@ -3,9 +3,11 @@ import type {
   ConnectionState,
   CurrencyPair,
   Direction,
+  KillSwitchState,
   Order,
   OrderDraft,
   Price,
+  RiskLimits,
   Symbol_,
   Trade,
   User,
@@ -15,10 +17,10 @@ import type {
  * The ports the UI is written against.
  *
  * Everything above this file — every tile, blotter row and chart — depends only
- * on these four interfaces. The mock adapters in `./mock` are one
- * implementation; a licensee's WebSocket, FIX or Hydra/Aeron gateway is another.
- * Swapping them is a change to `createServices()` and nothing else, which is the
- * whole point of shipping the UI as a separate layer.
+ * on these interfaces. The mock adapters in `./mock` are one implementation;
+ * a licensee's WebSocket, FIX or Hydra/Aeron gateway is another. Swapping them
+ * is a change to `createServices()` and nothing else, which is the whole point
+ * of shipping the UI as a separate layer.
  */
 
 export interface MarketDataPort {
@@ -72,12 +74,71 @@ export interface AuthPort {
   signOut(): Promise<void>
 }
 
+/** Everything the audit trail records about one event. */
+export type AuditEventType =
+  | 'session.signed-in'
+  | 'session.restored'
+  | 'session.signed-out'
+  | 'trade.submitted'
+  | 'trade.executed'
+  | 'trade.rejected'
+  | 'order.submitted'
+  | 'order.cancelled'
+  | 'order.filled'
+  | 'risk.kill-switch-engaged'
+  | 'risk.kill-switch-released'
+  | 'risk.loss-halt-engaged'
+  | 'risk.loss-halt-released'
+
+export interface AuditEvent {
+  /** Monotonic within a session store; gaps indicate tampering or data loss. */
+  readonly sequence: number
+  readonly id: string
+  /** Epoch milliseconds. */
+  readonly timestamp: number
+  /** `system` for events with no signed-in user, e.g. a fill after sign-out. */
+  readonly userId: string
+  readonly userName: string
+  readonly type: AuditEventType
+  /** One human-readable line, e.g. `Buy 1m EURUSD at 1.08423`. */
+  readonly summary: string
+  /** Structured payload — for a trade, the exact quote the user was shown. */
+  readonly details: Readonly<Record<string, string | number | boolean>>
+}
+
+export interface AuditPort {
+  /** Records an event, stamping user, time and sequence. Must never throw. */
+  record(
+    type: AuditEventType,
+    summary: string,
+    details?: Readonly<Record<string, string | number | boolean>>
+  ): void
+  /** Full trail, newest first. Emits immediately with the current contents. */
+  events$(): Observable<readonly AuditEvent[]>
+  /** Serialises the trail for download, oldest first, RFC 4180. */
+  exportCsv(): string
+}
+
+export interface RiskPort {
+  readonly limits: RiskLimits
+  /** Kill switch state. Emits immediately with the current state. */
+  killSwitch$(): Observable<KillSwitchState>
+  /** Current state, for synchronous pre-trade checks in the service layer. */
+  readonly killSwitch: KillSwitchState
+  /** Halts dealing desk-wide. Rejects if the user lacks the entitlement. */
+  engageKillSwitch(reason: string): Promise<void>
+  /** Resumes dealing. Rejects if the user lacks the entitlement. */
+  releaseKillSwitch(): Promise<void>
+}
+
 export interface Services {
   readonly marketData: MarketDataPort
   readonly execution: ExecutionPort
   readonly orders: OrderPort
   readonly trades: TradePort
   readonly auth: AuthPort
+  readonly audit: AuditPort
+  readonly risk: RiskPort
   /** Releases timers and subscriptions. Called on unmount and in tests. */
   dispose(): void
 }

@@ -27,6 +27,7 @@ export const DEMO_USERS: readonly User[] = [
       maxNotional: 100_000_000,
       canTrade: true,
       canCancelAnyOrder: true,
+      canOperateKillSwitch: true,
     },
   },
   {
@@ -40,6 +41,7 @@ export const DEMO_USERS: readonly User[] = [
       maxNotional: 2_000_000,
       canTrade: true,
       canCancelAnyOrder: false,
+      canOperateKillSwitch: false,
     },
   },
   {
@@ -48,10 +50,13 @@ export const DEMO_USERS: readonly User[] = [
     desk: 'Risk & Control',
     role: 'viewer',
     entitlements: {
+      // Read-only on the market, and the hand on the kill switch — the risk
+      // function's actual shape on most desks.
       instruments: [],
       maxNotional: 0,
       canTrade: false,
       canCancelAnyOrder: false,
+      canOperateKillSwitch: true,
     },
   },
 ]

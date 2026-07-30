@@ -1,5 +1,6 @@
 import { useMemo, useRef, useSyncExternalStore } from 'react'
 import type { Observable } from 'rxjs'
+import { emitTelemetry } from '@/lib/telemetry'
 
 /**
  * Subscribes a component to an Observable via `useSyncExternalStore`.
@@ -30,6 +31,9 @@ export function useObservable<T>(source: Observable<T>, initialValue: T): T {
           // A dead stream must not blank the UI: hold the last good value and
           // make the failure visible to whoever is watching the console.
           console.error('[useObservable] stream error', error)
+          emitTelemetry('ui.stream-error', {
+            message: error instanceof Error ? error.message : String(error),
+          })
         },
       })
       return () => {

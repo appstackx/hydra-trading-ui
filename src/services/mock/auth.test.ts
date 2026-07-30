@@ -122,6 +122,7 @@ describe('MockAuth', () => {
         maxNotional: 1,
         canTrade: true,
         canCancelAnyOrder: false,
+        canOperateKillSwitch: false,
       },
     }
     const auth = new MockAuth({ users: [custom], storage: memoryStorage() })

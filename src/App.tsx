@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { ServicesProvider } from '@/app/ServicesContext'
 import { AuthProvider, useUser } from '@/app/AuthContext'
+import { RiskProvider } from '@/app/RiskContext'
 import { ThemeProvider } from '@/app/ThemeContext'
 import { ToastProvider } from '@/app/ToastContext'
 import { StatusBar } from '@/app/StatusBar'
@@ -8,6 +9,7 @@ import { TitleBar } from '@/app/TitleBar'
 import { Workspace } from '@/app/Workspace'
 import { ErrorBoundary } from '@/app/ErrorBoundary'
 import { SignIn } from '@/features/auth/SignIn'
+import { RiskBanner } from '@/features/risk/RiskBanner'
 import { BRAND } from '@/theme/brand'
 import type { AppServices } from '@/services'
 
@@ -27,7 +29,9 @@ export function App({ services }: AppProps = {}): ReactNode {
         <ToastProvider>
           <ServicesProvider {...(services ? { services } : {})}>
             <AuthProvider>
-              <Shell />
+              <RiskProvider>
+                <Shell />
+              </RiskProvider>
             </AuthProvider>
           </ServicesProvider>
         </ToastProvider>
@@ -57,6 +61,7 @@ function Shell(): ReactNode {
   return (
     <div className="flex h-full flex-col bg-canvas">
       <TitleBar />
+      <RiskBanner />
       <Workspace />
       <StatusBar />
     </div>

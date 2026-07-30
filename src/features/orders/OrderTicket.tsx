@@ -1,11 +1,19 @@
 import { useCallback, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import type { Direction, OrderDraft, OrderType, TimeInForce } from '@/domain'
-import { canDeal, formatNotional, parseNotional, validateOrderDraft, visibleInstruments } from '@/domain'
+import {
+  canDeal,
+  checkFatFinger,
+  formatNotional,
+  parseNotional,
+  validateOrderDraft,
+  visibleInstruments,
+} from '@/domain'
 import { Button } from '@/components/Button'
 import { useServices } from '@/app/ServicesContext'
 import { useToasts } from '@/app/ToastContext'
 import { useAllPrices, useCurrencyPairs } from '@/hooks/useMarketData'
 import { useUser } from '@/app/AuthContext'
+import { useRisk } from '@/app/RiskContext'
 import { cn } from '@/lib/cn'
 
 const ORDER_TYPES: readonly OrderType[] = ['Market', 'Limit']
@@ -18,8 +26,9 @@ const TIME_IN_FORCE: readonly TimeInForce[] = ['GTC', 'IOC', 'FOK']
  * so what the form accepts and what the back end accepts cannot drift apart.
  */
 export function OrderTicket(): ReactNode {
-  const { orders } = useServices()
+  const { orders, audit } = useServices()
   const { push } = useToasts()
+  const { halt, limits } = useRisk()
   const allPairs = useCurrencyPairs()
   const prices = useAllPrices()
   const user = useUser()
@@ -83,7 +92,27 @@ export function OrderTicket(): ReactNode {
    * appears once there is a real size to judge.
    */
   const quantityEntered = Number.isFinite(draft.quantity) && draft.quantity > 0
-  const permissionBlocked = quantityEntered && !permission.allowed
+
+  // The fat-finger check compares the limit against the live mid: 1.0842 typed
+  // as 10.842 is caught here, before it becomes a resting order that fills the
+  // instant the book touches it.
+  const fatFinger = useMemo(() => {
+    if (draft.orderType !== 'Limit' || draft.limitPrice === undefined || !price) {
+      return { allowed: true as const }
+    }
+    return checkFatFinger(draft.limitPrice, price.mid, limits.fatFingerBps)
+  }, [draft.orderType, draft.limitPrice, price, limits.fatFingerBps])
+
+  // Severity order matches the tiles: desk halt, then entitlement, then the
+  // sanity of the price itself.
+  const blockReason = halt
+    ? halt.reason
+    : quantityEntered && !permission.allowed
+      ? permission.reason
+      : !fatFinger.allowed
+        ? fatFinger.reason
+        : null
+  const permissionBlocked = blockReason !== null
 
   /** Prefills the limit with the touch price on the side being traded. */
   const applyTouchPrice = useCallback(() => {
@@ -97,14 +126,30 @@ export function OrderTicket(): ReactNode {
       event.preventDefault()
       setSubmitted(true)
       if (hasErrors) return
-      if (!permission.allowed) {
-        push({ tone: 'error', title: 'Not permitted', detail: permission.reason })
+      if (blockReason !== null) {
+        push({ tone: 'error', title: 'Not permitted', detail: blockReason })
         return
       }
 
       void orders
         .submit(draft)
         .then((order) => {
+          audit.record(
+            'order.submitted',
+            `${order.direction} ${formatNotional(order.quantity)} ${order.symbol} ${order.orderType}${
+              order.limitPrice === undefined ? '' : ` @ ${String(order.limitPrice)}`
+            } ${order.timeInForce}`,
+            {
+              orderId: order.id,
+              symbol: order.symbol,
+              direction: order.direction,
+              quantity: order.quantity,
+              orderType: order.orderType,
+              timeInForce: order.timeInForce,
+              ...(order.limitPrice === undefined ? {} : { limitPrice: order.limitPrice }),
+              ...(price ? { marketMidAtSubmit: price.mid } : {}),
+            }
+          )
           push({
             tone: 'info',
             title: `${order.direction} ${formatNotional(order.quantity)} ${order.symbol} working`,
@@ -122,7 +167,7 @@ export function OrderTicket(): ReactNode {
           })
         })
     },
-    [draft, hasErrors, orders, permission, push]
+    [audit, blockReason, draft, hasErrors, orders, price, push]
   )
 
   return (
@@ -296,7 +341,7 @@ export function OrderTicket(): ReactNode {
           role="status"
           data-testid="order-entitlement-block"
         >
-          {permission.allowed ? '' : permission.reason}
+          {blockReason}
         </p>
       )}
 

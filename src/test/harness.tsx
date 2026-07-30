@@ -4,6 +4,7 @@ import type { ReactElement, ReactNode } from 'react'
 import type {
   ConnectionState,
   CurrencyPair,
+  KillSwitchState,
   Order,
   OrderDraft,
   Price,
@@ -11,21 +12,26 @@ import type {
   Trade,
   User,
 } from '@/domain'
-import { validateOrderDraft } from '@/domain'
+import { canOperateKillSwitch, DEFAULT_RISK_LIMITS, KILL_SWITCH_OFF, validateOrderDraft } from '@/domain'
 import type {
   AppServices,
+  AuditEvent,
+  AuditEventType,
+  AuditPort,
   AuthPort,
   ExecutionPort,
   ExecutionRequest,
   ExecutionResult,
   MarketDataPort,
   OrderPort,
+  RiskPort,
   SessionConfig,
   TradePort,
 } from '@/services'
 import { DEMO_USERS } from '@/services'
 import { ServicesProvider } from '@/app/ServicesContext'
 import { AuthProvider } from '@/app/AuthContext'
+import { RiskProvider } from '@/app/RiskContext'
 import { ThemeProvider } from '@/app/ThemeContext'
 import { ToastProvider } from '@/app/ToastContext'
 import { EURUSD, USDJPY, price as makePrice } from './fixtures'
@@ -148,6 +154,8 @@ export class TestServices implements AppServices {
         averageFillPrice: 0,
         status: 'Working',
         timeInForce: draft.timeInForce,
+        ownerId: this.currentUser.value?.id ?? 'system',
+        ownerName: this.currentUser.value?.name ?? 'system',
         createdAt: Date.now(),
         updatedAt: Date.now(),
         ...(draft.limitPrice === undefined ? {} : { limitPrice: draft.limitPrice }),
@@ -170,6 +178,62 @@ export class TestServices implements AppServices {
     record: (trade) => {
       this.tradeList.next([trade, ...this.tradeList.value])
     },
+  }
+
+  /** Kill-switch state, drivable by tests. */
+  readonly killSwitchState = new BehaviorSubject<KillSwitchState>(KILL_SWITCH_OFF)
+  /** Every audit event recorded, newest first, for assertions. */
+  readonly auditEvents = new BehaviorSubject<readonly AuditEvent[]>([])
+  private auditSequence = 0
+
+  // Built in a closure so the object-literal getter can reach the instance:
+  // a plain `get killSwitch()` inside the literal would bind `this` to the
+  // literal itself, not to the TestServices under construction.
+  readonly risk: RiskPort = ((self: TestServices): RiskPort => ({
+    limits: DEFAULT_RISK_LIMITS,
+    killSwitch$: () => self.killSwitchState.asObservable(),
+    get killSwitch() {
+      return self.killSwitchState.value
+    },
+    engageKillSwitch: (reason) => {
+      if (!canOperateKillSwitch(self.currentUser.value)) {
+        return Promise.reject(new Error('You are not entitled to operate the kill switch'))
+      }
+      self.killSwitchState.next({
+        engaged: true,
+        engagedBy: self.currentUser.value?.name ?? 'unknown',
+        engagedAt: Date.now(),
+        reason,
+      })
+      return Promise.resolve()
+    },
+    releaseKillSwitch: () => {
+      if (!canOperateKillSwitch(self.currentUser.value)) {
+        return Promise.reject(new Error('You are not entitled to operate the kill switch'))
+      }
+      self.killSwitchState.next(KILL_SWITCH_OFF)
+      return Promise.resolve()
+    },
+  }))(this)
+
+  readonly audit: AuditPort = {
+    record: (type: AuditEventType, summary, details = {}) => {
+      this.auditSequence += 1
+      const user = this.currentUser.value
+      const event: AuditEvent = {
+        sequence: this.auditSequence,
+        id: `AUD-${String(this.auditSequence).padStart(6, '0')}`,
+        timestamp: Date.now(),
+        userId: user?.id ?? 'system',
+        userName: user?.name ?? 'system',
+        type,
+        summary,
+        details,
+      }
+      this.auditEvents.next([event, ...this.auditEvents.value])
+    },
+    events$: () => this.auditEvents.asObservable(),
+    exportCsv: () => this.auditEvents.value.map((event) => event.summary).join('\n'),
   }
 
   readonly auth: AuthPort = {
@@ -196,7 +260,16 @@ export class TestServices implements AppServices {
     }
   }
 
+  // An arrow property, not a method: the drawer destructures this off the
+  // services object and calls it unbound, exactly as the interface's
+  // function-property type says it may.
+  readonly clearPersistedState = (): void => {
+    this.auditEvents.next([])
+  }
+
   dispose(): void {
+    this.killSwitchState.complete()
+    this.auditEvents.complete()
     this.currentUser.complete()
     for (const subject of this.prices.values()) subject.complete()
     this.tradeList.complete()
@@ -239,7 +312,9 @@ export function renderWithServices(
       <ThemeProvider>
         <ToastProvider>
           <ServicesProvider services={services}>
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              <RiskProvider>{children}</RiskProvider>
+            </AuthProvider>
           </ServicesProvider>
         </ToastProvider>
       </ThemeProvider>

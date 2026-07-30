@@ -24,6 +24,19 @@ export interface MockOrderServiceOptions {
   readonly onFill: (trade: Trade) => void
   readonly now?: () => number
   readonly trader?: string
+  /**
+   * Resolves who owns a newly submitted order. Defaults to a desk account so
+   * tests that do not care about ownership need not wire it; when it is
+   * provided and returns `null`, submission is refused — an order with no
+   * owner has no cancel rights and no audit identity.
+   */
+  readonly getOwner?: () => { readonly id: string; readonly name: string } | null
+  /** Orders restored from a previous session; working ones resume matching. */
+  readonly initialOrders?: readonly Order[]
+  /** Last order sequence already used, so restored ids are never reissued. */
+  readonly startOrderSequence?: number
+  /** Last fill sequence already used. */
+  readonly startFillSequence?: number
 }
 
 /**
@@ -35,21 +48,26 @@ export interface MockOrderServiceOptions {
  * being demonstrated.
  */
 export class MockOrderService implements OrderPort {
-  private readonly subject = new BehaviorSubject<readonly Order[]>([])
+  private readonly subject: BehaviorSubject<readonly Order[]>
   private readonly marketData: MarketDataPort
   private readonly onFill: (trade: Trade) => void
   private readonly now: () => number
   private readonly trader: string
+  private readonly getOwner: () => { readonly id: string; readonly name: string } | null
 
   private subscription: Subscription | undefined
-  private orderSequence = 0
-  private fillSequence = 0
+  private orderSequence: number
+  private fillSequence: number
 
   constructor(options: MockOrderServiceOptions) {
     this.marketData = options.marketData
     this.onFill = options.onFill
     this.now = options.now ?? Date.now
     this.trader = options.trader ?? 'AXDEMO'
+    this.getOwner = options.getOwner ?? (() => ({ id: 'desk', name: this.trader }))
+    this.subject = new BehaviorSubject<readonly Order[]>(options.initialOrders ?? [])
+    this.orderSequence = options.startOrderSequence ?? 0
+    this.fillSequence = options.startFillSequence ?? 0
   }
 
   /** Begins matching. Idempotent, so a double-start cannot double-fill. */
@@ -74,6 +92,11 @@ export class MockOrderService implements OrderPort {
       return Promise.reject(new Error(firstError))
     }
 
+    const owner = this.getOwner()
+    if (!owner) {
+      return Promise.reject(new Error('Not signed in'))
+    }
+
     const at = this.now()
     this.orderSequence += 1
 
@@ -87,6 +110,8 @@ export class MockOrderService implements OrderPort {
       averageFillPrice: 0,
       status: 'Working',
       timeInForce: draft.timeInForce,
+      ownerId: owner.id,
+      ownerName: owner.name,
       createdAt: at,
       updatedAt: at,
       ...(draft.limitPrice === undefined ? {} : { limitPrice: draft.limitPrice }),
@@ -167,7 +192,9 @@ export class MockOrderService implements OrderPort {
       tradeDate: at,
       valueDate: spotValueDate(at),
       status: 'Done',
-      trader: this.trader,
+      // The fill belongs to whoever raised the order, not to whoever happens
+      // to be signed in when the market reaches it.
+      trader: order.ownerName,
       dealtCurrency: INSTRUMENTS_BY_SYMBOL[order.symbol]?.base ?? order.symbol.slice(0, 3),
     }
   }

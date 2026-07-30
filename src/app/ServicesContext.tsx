@@ -25,8 +25,18 @@ function getDefaultServices(): AppServices {
   defaultServices ??= createServices({
     ...sessionOptionsFromSearch(search),
     seed: seedFromSearch(search),
+    storage: safeLocalStorage(),
   })
   return defaultServices
+}
+
+/** Safari throws on `localStorage` in some private modes; boot must survive. */
+function safeLocalStorage(): Storage | undefined {
+  try {
+    return typeof window === 'undefined' ? undefined : window.localStorage
+  } catch {
+    return undefined
+  }
 }
 
 /** Disposes the shared instance. For tests and hot-reload teardown only. */

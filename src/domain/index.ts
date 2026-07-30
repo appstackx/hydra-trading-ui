@@ -1,5 +1,6 @@
 export * from './types'
 export * from './auth'
+export * from './risk'
 export * from './pricing'
 export * from './positions'
 export * from './orders'

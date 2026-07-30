@@ -90,6 +90,12 @@ export interface Order {
   readonly limitPrice?: number
   readonly status: OrderStatus
   readonly timeInForce: TimeInForce
+  /**
+   * Who raised the order. Cancel rights depend on it: a junior may pull their
+   * own orders and nobody else's.
+   */
+  readonly ownerId: string
+  readonly ownerName: string
   readonly createdAt: number
   readonly updatedAt: number
 }

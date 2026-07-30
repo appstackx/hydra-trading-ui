@@ -122,6 +122,50 @@ describe('OrderTicket', () => {
     expect(services.orderList.value).toHaveLength(0)
   })
 
+  it('blocks a limit priced a slipped-decimal away from the market', async () => {
+    const user = userEvent.setup()
+    const { services } = renderTicket()
+
+    // 10.842 against a 1.0842 mid: the classic fat finger, ~90,000 bps out.
+    await user.type(screen.getByTestId('order-limit'), '10.842')
+
+    expect(await screen.findByTestId('order-entitlement-block')).toHaveTextContent(
+      /bps from the market/
+    )
+    expect(screen.getByTestId('order-submit')).toBeDisabled()
+    expect(services.orderList.value).toHaveLength(0)
+  })
+
+  it('accepts a limit inside the fat-finger band', async () => {
+    const user = userEvent.setup()
+    renderTicket()
+
+    await user.type(screen.getByTestId('order-limit'), '1.08000')
+
+    expect(screen.queryByTestId('order-entitlement-block')).not.toBeInTheDocument()
+    expect(screen.getByTestId('order-submit')).toBeEnabled()
+  })
+
+  it('audits a submitted order with its terms and the market at submit', async () => {
+    const user = userEvent.setup()
+    const { services } = renderTicket()
+
+    await user.type(screen.getByTestId('order-limit'), '1.08000')
+    await user.click(screen.getByTestId('order-submit'))
+
+    await waitFor(() => {
+      expect(
+        services.auditEvents.value.some((event) => event.type === 'order.submitted')
+      ).toBe(true)
+    })
+    const event = services.auditEvents.value.find((entry) => entry.type === 'order.submitted')
+    expect(event?.details).toMatchObject({
+      symbol: 'EURUSD',
+      limitPrice: 1.08,
+      marketMidAtSubmit: 1.0842,
+    })
+  })
+
   it('stays quiet about errors until the ticket is submitted', async () => {
     const user = userEvent.setup()
     renderTicket()

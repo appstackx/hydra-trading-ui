@@ -10,8 +10,9 @@ import {
 import { canDeal } from '@/domain'
 import { useServices } from '@/app/ServicesContext'
 import { useUser } from '@/app/AuthContext'
+import { useRisk } from '@/app/RiskContext'
 import { useToasts } from '@/app/ToastContext'
-import { usePrice, usePriceHistory } from '@/hooks/useMarketData'
+import { usePrice, usePriceHistory, useQuoteStale } from '@/hooks/useMarketData'
 import { Sparkline } from '@/components/Sparkline'
 import { cn } from '@/lib/cn'
 import { NotionalInput } from './NotionalInput'
@@ -39,10 +40,12 @@ export interface SpotTileProps {
  * having to wire execution.
  */
 export function SpotTile({ pair }: SpotTileProps): ReactNode {
-  const { execution, trades } = useServices()
+  const { execution, trades, audit } = useServices()
   const { push } = useToasts()
+  const { halt } = useRisk()
   const user = useUser()
   const price = usePrice(pair.symbol)
+  const staleQuote = useQuoteStale(price)
   const history = usePriceHistory(pair.symbol, 32)
 
   const [notionalText, setNotionalText] = useState(() => formatNotional(pair.defaultNotional))
@@ -59,7 +62,18 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
     () => canDeal(user, pair.symbol, notional ?? 0),
     [user, pair.symbol, notional]
   )
-  const blocked = notionalInvalid || !permission.allowed
+
+  // Blockers in order of severity: a desk-wide halt outranks a stale quote,
+  // which outranks this user's entitlements. The first one that applies is the
+  // one the trader is told about.
+  const blockReason = halt
+    ? halt.reason
+    : staleQuote
+      ? 'Stale price — dealing suspended until the venue quotes again'
+      : !permission.allowed && !notionalInvalid
+        ? permission.reason
+        : null
+  const blocked = notionalInvalid || blockReason !== null
 
   useEffect(
     () => () => {
@@ -82,6 +96,22 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
       setState({ kind: 'executing', direction })
       const rate = direction === 'Buy' ? price.ask : price.bid
 
+      // The quote on screen at the moment of the click, captured before the
+      // request leaves. In a disputed trade this is the evidence.
+      audit.record(
+        'trade.submitted',
+        `${direction} ${formatNotional(notional)} ${pair.symbol} at ${rate.toFixed(pair.ratePrecision)}`,
+        {
+          symbol: pair.symbol,
+          direction,
+          notional,
+          clickedRate: rate,
+          shownBid: price.bid,
+          shownAsk: price.ask,
+          quoteTimestamp: price.timestamp,
+        }
+      )
+
       void execution
         .execute({ symbol: pair.symbol, direction, notional, rate })
         .then((result) => {
@@ -93,6 +123,10 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
           const dealt = `${direction === 'Buy' ? 'Bought' : 'Sold'} ${size} ${pair.symbol}`
 
           if (result.kind === 'done') {
+            audit.record('trade.executed', `${dealt} at ${result.trade.rate.toFixed(pair.ratePrecision)}`, {
+              tradeId: result.trade.id,
+              rate: result.trade.rate,
+            })
             setState({ kind: 'done', trade: result.trade })
             push({
               tone: 'success',
@@ -100,6 +134,10 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
               detail: `at ${result.trade.rate.toFixed(pair.ratePrecision)} · ${result.trade.id}`,
             })
           } else {
+            audit.record('trade.rejected', `${dealt} — ${result.reason}`, {
+              tradeId: result.trade.id,
+              reason: result.reason,
+            })
             setState({ kind: 'rejected', trade: result.trade, reason: result.reason })
             push({ tone: 'error', title: `${dealt} — rejected`, detail: result.reason })
           }
@@ -107,11 +145,14 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
         })
         .catch((error: unknown) => {
           const reason = error instanceof Error ? error.message : 'Execution failed'
+          audit.record('trade.rejected', `${direction} ${pair.symbol} refused — ${reason}`, {
+            reason,
+          })
           setState({ kind: 'idle' })
           push({ tone: 'error', title: `${pair.symbol} execution failed`, detail: reason })
         })
     },
-    [blocked, execution, notional, pair, price, push, scheduleReset, trades]
+    [audit, blocked, execution, notional, pair, price, push, scheduleReset, trades]
   )
 
   // Taken from the quote clock rather than the browser's, so the tile shows the
@@ -192,13 +233,13 @@ export function SpotTile({ pair }: SpotTileProps): ReactNode {
             SP {formatShortDate(valueDate)}
           </span>
         </div>
-        {!permission.allowed && !notionalInvalid && (
+        {blockReason !== null && (
           <p
             className="text-[10px] leading-tight text-warn"
             role="status"
             data-testid={`entitlement-block-${pair.symbol}`}
           >
-            {permission.reason}
+            {blockReason}
           </p>
         )}
       </footer>

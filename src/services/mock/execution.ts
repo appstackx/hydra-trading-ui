@@ -33,6 +33,10 @@ export interface MockExecutionOptions {
   /** Injected so tests resolve instantly instead of waiting on real timers. */
   readonly delay?: (ms: number) => Promise<void>
   readonly trader?: string
+  /** Resolves the trader per ticket, so the blotter names the signed-in user. */
+  readonly getTrader?: () => string | undefined
+  /** Last trade sequence already used, so restored ids are never reissued. */
+  readonly startSequence?: number
 }
 
 const wait = (ms: number): Promise<void> =>
@@ -48,13 +52,14 @@ const wait = (ms: number): Promise<void> =>
  * rejected?" is the first question anyone evaluating a trading UI asks.
  */
 export class MockExecution implements ExecutionPort {
-  private sequence = 0
+  private sequence: number
 
   private readonly random: Random
   private readonly getPrice: (symbol: Symbol_) => Price | undefined
   private readonly now: () => number
   private readonly delay: (ms: number) => Promise<void>
   private readonly trader: string
+  private readonly getTrader: (() => string | undefined) | undefined
 
   constructor(options: MockExecutionOptions) {
     this.random = options.random
@@ -62,9 +67,15 @@ export class MockExecution implements ExecutionPort {
     this.now = options.now ?? Date.now
     this.delay = options.delay ?? wait
     this.trader = options.trader ?? 'AXDEMO'
+    this.getTrader = options.getTrader
+    this.sequence = options.startSequence ?? 0
   }
 
   async execute(request: ExecutionRequest): Promise<ExecutionResult> {
+    // Captured before the simulated round trip: the ticket belongs to whoever
+    // sent it, not to whoever is signed in when the response lands.
+    const trader = this.getTrader?.() ?? this.trader
+
     await this.delay(this.random.int(140, 520))
 
     const tradeDate = this.now()
@@ -79,7 +90,7 @@ export class MockExecution implements ExecutionPort {
       tradeDate,
       valueDate: spotValueDate(tradeDate),
       status: rejection === undefined ? 'Done' : 'Rejected',
-      trader: this.trader,
+      trader,
       dealtCurrency: INSTRUMENTS_BY_SYMBOL[request.symbol]?.base ?? request.symbol.slice(0, 3),
       ...(rejection === undefined ? {} : { rejectionReason: rejection }),
     }

@@ -1,9 +1,12 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { initialsOf, roleLabel } from '@/domain'
 import { BRAND } from '@/theme/brand'
 import { cn } from '@/lib/cn'
+import { AuditDrawer } from '@/features/audit/AuditDrawer'
 import { useTheme } from './ThemeContext'
 import { useAuth } from './AuthContext'
+import { useRisk } from './RiskContext'
+import { useToasts } from './ToastContext'
 
 /**
  * Product chrome. Every string and the accent mark come from {@link BRAND}, so a
@@ -12,6 +15,19 @@ import { useAuth } from './AuthContext'
 export function TitleBar(): ReactNode {
   const { theme, toggleTheme } = useTheme()
   const { user, signOut } = useAuth()
+  const { killSwitch, canOperate, engage } = useRisk()
+  const { push } = useToasts()
+  const [auditOpen, setAuditOpen] = useState(false)
+
+  const handleHalt = (): void => {
+    void engage('Manual halt from the title bar').catch((error: unknown) => {
+      push({
+        tone: 'error',
+        title: 'Cannot halt dealing',
+        detail: error instanceof Error ? error.message : 'Not permitted',
+      })
+    })
+  }
 
   return (
     <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-panel px-3">
@@ -39,6 +55,32 @@ export function TitleBar(): ReactNode {
         >
           by {BRAND.vendorName}
         </a>
+
+        {user && canOperate && !killSwitch.engaged && (
+          // One click, no confirm: friction on a kill switch costs seconds
+          // that a runaway algo does not give back.
+          <button
+            type="button"
+            onClick={handleHalt}
+            data-testid="kill-switch-engage"
+            className="rounded border border-sell/40 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sell transition-colors hover:bg-sell/10"
+          >
+            Halt dealing
+          </button>
+        )}
+
+        {user && (
+          <button
+            type="button"
+            onClick={() => {
+              setAuditOpen(true)
+            }}
+            data-testid="audit-open"
+            className="rounded border border-line px-2 py-1 text-[10px] font-semibold text-ink-muted transition-colors hover:bg-panel-hover hover:text-ink"
+          >
+            Audit
+          </button>
+        )}
 
         {user && (
           <div className="flex items-center gap-2" data-testid="current-user">
@@ -80,6 +122,13 @@ export function TitleBar(): ReactNode {
           {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
         </button>
       </div>
+
+      <AuditDrawer
+        open={auditOpen}
+        onClose={() => {
+          setAuditOpen(false)
+        }}
+      />
     </header>
   )
 }

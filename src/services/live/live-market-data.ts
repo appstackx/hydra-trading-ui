@@ -1,6 +1,7 @@
 import { BehaviorSubject, map, Observable, shareReplay, Subject, takeUntil } from 'rxjs'
 import type { ConnectionState, CurrencyPair, Price, Symbol_ } from '@/domain'
 import { movementOf, round } from '@/domain'
+import { emitTelemetry } from '@/lib/telemetry'
 import type { MarketDataPort } from '../ports'
 import { LIVE_INSTRUMENTS, LIVE_INSTRUMENTS_BY_SYMBOL } from './instruments'
 import { DEFAULT_VENUE, type LiveVenue } from './venues'
@@ -256,6 +257,9 @@ export class LiveMarketData implements MarketDataPort {
 
   private publishConnection(status: ConnectionState['status']): void {
     if (this.connection.closed) return
+    if (status !== this.connection.value.status) {
+      emitTelemetry(`feed.${status}`, { venue: this.venue.id })
+    }
     this.connection.next({
       status,
       // Time to first message stands in for latency: a public feed gives no

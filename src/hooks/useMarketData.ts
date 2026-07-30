@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { combineLatest, map, sampleTime, scan, startWith } from 'rxjs'
 import type {
   ConnectionState,
@@ -9,8 +9,8 @@ import type {
   Symbol_,
   Trade,
 } from '@/domain'
-import { calculatePositions, currencyExposures, totalPnl } from '@/domain'
-import { useServices } from '@/app/ServicesContext'
+import { calculatePositions, currencyExposures, isQuoteStale, totalPnl } from '@/domain'
+import { useServices, useSessionConfig } from '@/app/ServicesContext'
 import { useObservable } from './useObservable'
 
 /* Stable identities so an empty result never re-renders a consumer. */
@@ -21,6 +21,44 @@ const NO_POSITIONS: readonly Position[] = Object.freeze([])
 const NO_HISTORY: readonly number[] = Object.freeze([])
 
 const CONNECTING: ConnectionState = { status: 'connecting', latencyMs: 0, service: '—' }
+
+/**
+ * Whether a quote is too old to deal on.
+ *
+ * Live feeds only: the demo simulator runs on an injected clock, so measuring
+ * its quotes against wall time would suspend perfectly healthy tiles. On a
+ * quiet live instrument this fires legitimately — Coinbase's ticker channel
+ * publishes on trades, and a price nobody has traded on for half a minute is
+ * not one to deal on.
+ */
+export function useQuoteStale(price: Price | undefined): boolean {
+  const { risk } = useServices()
+  const config = useSessionConfig()
+  const enabled = config.feed === 'live'
+  const threshold = risk.limits.staleQuoteMs
+
+  const [stale, setStale] = useState(false)
+
+  useEffect(() => {
+    if (!enabled || !price) {
+      setStale(false)
+      return
+    }
+
+    const evaluate = (): void => {
+      setStale(isQuoteStale(price.timestamp, Date.now(), threshold))
+    }
+
+    evaluate()
+    // Half the threshold keeps detection latency bounded without a fast timer.
+    const timer = setInterval(evaluate, Math.max(1_000, threshold / 2))
+    return () => {
+      clearInterval(timer)
+    }
+  }, [enabled, price, threshold])
+
+  return stale
+}
 
 /** Latest quote for one instrument; `undefined` until the first tick lands. */
 export function usePrice(symbol: Symbol_): Price | undefined {

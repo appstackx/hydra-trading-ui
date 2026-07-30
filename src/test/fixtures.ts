@@ -64,6 +64,8 @@ export function order(overrides: Partial<Order> = {}): Order {
     averageFillPrice: 0,
     status: 'Working',
     timeInForce: 'GTC',
+    ownerId: 'u-senior',
+    ownerName: 'A. Whitfield',
     createdAt: T0,
     updatedAt: T0,
     ...overrides,
